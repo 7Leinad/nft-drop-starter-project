@@ -3,8 +3,6 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { Program, Provider, web3 } from '@project-serum/anchor';
 import { MintLayout, TOKEN_PROGRAM_ID, Token } from '@solana/spl-token';
 import { sendTransactions } from './connection';
-import CountdownTimer from '../CountdownTimer';
-import { programs } from "@metaplex/js";
 import './CandyMachine.css';
 import {
   candyMachineProgram,
@@ -17,25 +15,15 @@ import {
 } from './helpers';
 require("dotenv").config();
 
-const {
-  metadata: { Metadata, MetadataProgram },
-} = programs;
-
 const { SystemProgram } = web3;
 const opts = {
   preflightCommitment: 'processed',
 };
 
-const MAX_NAME_LENGTH = 32;
-const MAX_URI_LENGTH = 200;
-const MAX_SYMBOL_LENGTH = 10;
-const MAX_CREATOR_LEN = 32 + 1 + 1;
-
 const CandyMachine = ({ walletAddress }) => {
 
   // Add state property inside your component like this
   const [candyMachine, setCandyMachine] = useState(null);
-  const [mints, setMints] = useState([]);
 
   const getCandyMachineCreator = async (candyMachine) => {
     const candyMachineID = new PublicKey(candyMachine);
@@ -45,9 +33,62 @@ const CandyMachine = ({ walletAddress }) => {
     );
   };
 
-  // Add these two state properties
-  const [isMinting, setIsMinting] = useState(false);
-  const [isLoadingMints, setIsLoadingMints] = useState(false);
+  const getMetadata = async (mint) => {
+    return (
+      await PublicKey.findProgramAddress(
+        [
+          Buffer.from('metadata'),
+          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+          mint.toBuffer(),
+        ],
+        TOKEN_METADATA_PROGRAM_ID
+      )
+    )[0];
+  };
+
+  const getMasterEdition = async (mint) => {
+    return (
+      await PublicKey.findProgramAddress(
+        [
+          Buffer.from('metadata'),
+          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+          mint.toBuffer(),
+          Buffer.from('edition'),
+        ],
+        TOKEN_METADATA_PROGRAM_ID
+      )
+    )[0];
+  };
+  
+  const createAssociatedTokenAccountInstruction = (
+    associatedTokenAddress,
+    payer,
+    walletAddress,
+    splTokenMintAddress
+  ) => {
+    const keys = [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: associatedTokenAddress, isSigner: false, isWritable: true },
+      { pubkey: walletAddress, isSigner: false, isWritable: false },
+      { pubkey: splTokenMintAddress, isSigner: false, isWritable: false },
+      {
+        pubkey: web3.SystemProgram.programId,
+        isSigner: false,
+        isWritable: false,
+      },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      {
+        pubkey: web3.SYSVAR_RENT_PUBKEY,
+        isSigner: false,
+        isWritable: false,
+      },
+    ];
+    return new web3.TransactionInstruction({
+      keys,
+      programId: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+      data: Buffer.from([]),
+    });
+  };
 
   useEffect(() => {
     getCandyMachineState();
@@ -133,125 +174,16 @@ const CandyMachine = ({ walletAddress }) => {
       },
     });
 
-      /*setMachineStats({
-        itemsAvailable,
-        itemsRedeemed,
-        itemsRemaining,
-        goLiveData,
-        goLiveDateTimeString,
-    });*/
+  console.log({
+    itemsAvailable,
+    itemsRedeemed,
+    itemsRemaining,
+    goLiveData,
+    goLiveDateTimeString,
+    //presale,
+  });
+};
 
-    console.log({
-        itemsAvailable,
-        itemsRedeemed,
-        itemsRemaining,
-        goLiveData,
-        goLiveDateTimeString,
-    });
-
-    setIsLoadingMints(true);
-    const data = await fetchHashTable(process.env.REACT_APP_CANDY_MACHINE_ID, true);
-    console.log("T1", data.length);
-    if (data.length !== 0) {
-      console.log("T2");
-
-        for (const mint of data) {
-          console.log("T3");
-
-            // Get URI
-            const response = await fetch(mint.data.uri);
-            const parse = await response.json();
-            console.log("Past Minted NFT", mint);
-            console.log("T4");
-
-            // Get image URI
-            if (!mints.find((mint) => mint === parse.image)) {
-                setMints((prevState) => [...prevState, parse.image]);
-            }
-        }
-    }
-
-    // Remove loading flag.
-    setIsLoadingMints(false);
-  };
-
-  // Actions
-  const fetchHashTable = async (hash, metadataEnabled) => {
-    const connection = new web3.Connection(process.env.REACT_APP_SOLANA_RPC_HOST);
-    console.log("T8", hash);
-
-    const metadataAccounts = await MetadataProgram.getProgramAccounts(connection, {
-        filters: [
-            {
-                memcmp: {
-                    offset:
-                        1 +
-                        32 +
-                        32 +
-                        4 +
-                        MAX_NAME_LENGTH +
-                        4 +
-                        MAX_URI_LENGTH +
-                        4 +
-                        MAX_SYMBOL_LENGTH +
-                        2 +
-                        1 +
-                        4 +
-                        0 * MAX_CREATOR_LEN,
-                    bytes: hash,
-                },
-            },
-        ],
-    });
-
-    const mintHashes = [];
-    console.log("T5", metadataAccounts.length);
-    for (let index = 0; index < metadataAccounts.length; index++) {
-        const account = metadataAccounts[index];
-        const accountInfo = await connection.getParsedAccountInfo(account.pubkey);
-        const metadata = new Metadata(hash.toString(), accountInfo.value);
-        if (metadataEnabled) mintHashes.push(metadata.data);
-        else mintHashes.push(metadata.data.mint);
-    }
-
-    return mintHashes;
-  };
-
-  const getMetadata = async (mint) => {
-    return (
-      await PublicKey.findProgramAddress(
-        [
-          Buffer.from('metadata'),
-          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-          mint.toBuffer(),
-        ],
-        TOKEN_METADATA_PROGRAM_ID
-      )
-    )[0];
-  };
-
-  const getMasterEdition = async (mint) => {
-    return (
-      await PublicKey.findProgramAddress(
-        [
-          Buffer.from('metadata'),
-          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-          mint.toBuffer(),
-          Buffer.from('edition'),
-        ],
-        TOKEN_METADATA_PROGRAM_ID
-      )
-    )[0];
-  };
-
-  const getTokenWallet = async (wallet, mint) => {
-    return (
-        await web3.PublicKey.findProgramAddress(
-            [wallet.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-            SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID
-        )
-    )[0];
-  };
   const mintToken = async () => {
     /*const provider = getProvider();
   
@@ -265,14 +197,12 @@ const CandyMachine = ({ walletAddress }) => {
     const candyMachine = await program.account.candyMachine.fetch(
       process.env.REACT_APP_CANDY_MACHINE_ID
     );*/
-    setIsMinting(true);
     const mint = web3.Keypair.generate();
-    //const token = await getTokenWallet(walletAddress.publicKey, mint.publicKey);
 
-    /*const userTokenAccountAddress = (
+    const userTokenAccountAddress = (
       await getAtaForMint(mint.publicKey, walletAddress.publicKey)
-    )[0];*/
-    const userTokenAccountAddress = await getTokenWallet(walletAddress.publicKey, mint.publicKey);
+    )[0];
+  
     const userPayingAccountAddress = candyMachine.tokenMint
       ? (await getAtaForMint(candyMachine.state.tokenMint.toke.tokenMint, walletAddress.publicKey))[0]
       : walletAddress.publicKey;
@@ -473,94 +403,21 @@ const CandyMachine = ({ walletAddress }) => {
       ).txs.map(t => t.txid);
     } catch (e) {
       console.log(e);
-       // If we have an error set our loading flag to false
-       setIsMinting(false);
     }
     return [];
   };
 
-  const createAssociatedTokenAccountInstruction = (
-    associatedTokenAddress,
-    payer,
-    walletAddress,
-    splTokenMintAddress
-  ) => {
-    const keys = [
-      { pubkey: payer, isSigner: true, isWritable: true },
-      { pubkey: associatedTokenAddress, isSigner: false, isWritable: true },
-      { pubkey: walletAddress, isSigner: false, isWritable: false },
-      { pubkey: splTokenMintAddress, isSigner: false, isWritable: false },
-      {
-        pubkey: web3.SystemProgram.programId,
-        isSigner: false,
-        isWritable: false,
-      },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      {
-        pubkey: web3.SYSVAR_RENT_PUBKEY,
-        isSigner: false,
-        isWritable: false,
-      },
-    ];
-    return new web3.TransactionInstruction({
-      keys,
-      programId: SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-      data: Buffer.from([]),
-    });
-  };
-
-  const renderMintedItems = () => (
-    <div className="gif-container">
-        <p className="sub-text">Minted Items ✨</p>
-        <div className="gif-grid">
-            {mints.map((mint) => (
-                <div className="gif-item" key={mint}>
-                    <img src={mint} alt={`Minted NFT ${mint}`} />
-                </div>
-            ))}
-        </div>
-    </div>
-  );
-
-  // Create render function
-  const renderDropTimer = () => {
-    // Get the current date and dropDate in a JavaScript Date object
-    const currentDate = new Date();
-    const dropDate = new Date(candyMachine.state.goLiveData * 1000);
-
-    // If currentDate is before dropDate, render our Countdown component
-    if (currentDate < dropDate) {
-      console.log('Before drop date!');
-      // Don't forget to pass over your dropDate!
-      return <CountdownTimer dropDate={dropDate} />;
-    }
-
-    // Else let's just return the current drop date
-    return <p>{`Drop Date: ${candyMachine.state.goLiveDateTimeString}`}</p>;
-  };
-
   return (
+    // Only show this if candyMachine and candyMachine.state is available
     candyMachine && candyMachine.state && (
       <div className="machine-container">
-        {renderDropTimer()}
+        <p>{window.env.REACT_APP_SOLANA_NETWORK}</p>
+        <p>{`Drop Date: ${candyMachine.state.goLiveDateTimeString}`}</p>
         <p>{`Items Minted: ${candyMachine.state.itemsRedeemed} / ${candyMachine.state.itemsAvailable}`}</p>
-          {/* Check to see if these properties are equal! */}
-          {candyMachine.state.itemsRedeemed === candyMachine.state.itemsAvailable ? (
-            <p className="sub-text">Sold Out 🙊</p>
-          ) : (
-            <button
-              className="cta-button mint-button"
-              onClick={mintToken}
-              disabled={isMinting}
-            >
-              Mint NFT
-            </button>
-          )}
-          {mints.length > 0 && renderMintedItems()}
-          {isLoadingMints && <p>LOADING MINTS...</p>}
-          <p>{mints.length}</p>
-      </div>
-    )
+        <button className="cta-button mint-button" onClick={mintToken}>
+            Mint NFT
+        </button>
+      </div>)
   );
 };
 
